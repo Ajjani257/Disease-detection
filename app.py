@@ -1,22 +1,42 @@
-# import streamlit as st
-# import joblib
-
-# # Load model and vectorizer
-# modelimport streamlit as st
+import streamlit as st
 import pandas as pd
 import joblib
 import matplotlib.pyplot as plt
 from typing import List, Optional
 
-# Load the model and vectorizer
-model = joblib.load("model.pkl")
-vectorizer = joblib.load("vectorizer.pkl")
+
+# --- Page config ---
+st.set_page_config(page_title="Disease Detection", page_icon="🏥", layout="centered")
+
+
+# --- Try to load model/vectorizer (graceful if missing) ---
+model = None
+vectorizer = None
+model_load_error: Optional[str] = None
+try:
+    model = joblib.load("model.pkl")
+    vectorizer = joblib.load("vectorizer.pkl")
+except Exception as exc:
+    model_load_error = (
+        "Model/vectorizer could not be loaded. Keyword rules will be used as fallback only.\n"
+        f"Details: {exc}"
+    )
+
 
 st.title("Disease Detection 🏥")
-st.write("Upload a text file or enter symptoms to predict likely diseases, view structured insights, and download results.")
+st.write(
+    "Upload a text file or enter symptoms to predict likely diseases, view structured insights, and download results."
+)
 
 # Medical Disclaimer
-st.warning("⚠️ **Medical Disclaimer**: This application is for educational and informational purposes only. It should not replace professional medical advice, diagnosis, or treatment. Always consult with qualified healthcare professionals for medical concerns.")
+st.warning(
+    "⚠️ **Medical Disclaimer**: This application is for educational and informational purposes only. "
+    "It should not replace professional medical advice, diagnosis, or treatment. Always consult with qualified healthcare professionals for medical concerns."
+)
+
+if model_load_error:
+    st.info(model_load_error)
+
 
 # --- Human disease labels (reference set) ---
 HUMAN_DISEASES: List[str] = [
@@ -59,6 +79,7 @@ HUMAN_DISEASES: List[str] = [
     "Dermatitis",
 ]
 
+
 # --- Keyword-based rules aligned to the above diseases ---
 def _contains_any(text: str, keywords: List[str]) -> bool:
     return any(keyword in text for keyword in keywords)
@@ -73,7 +94,7 @@ def classify_by_keywords(symptom_text: str) -> Optional[str]:
 
     # Prioritize urgent/emergent patterns
     if _contains_any(t, ["hives", "swelling of lips", "throat tightness", "anaphylaxis"]) and _contains_any(t, ["wheezing", "dizziness", "faint"]):
-        return "Anaphylaxis"  # not in header list but supported in dataset
+        return "Anaphylaxis"  # Not listed above, but acceptable as a rule-based urgent label
 
     # Respiratory infections
     if _contains_all(t, ["fever", "chills"]) and _contains_any(t, ["body aches", "severe fatigue"]) and _contains_any(t, ["dry cough", "cough"]):
@@ -110,7 +131,7 @@ def classify_by_keywords(symptom_text: str) -> Optional[str]:
         return "Pancreatitis"
 
     # GU
-    if _contains_any(t, ["burning with urination", "painful urination", "dysuria"]) and _contains_any(t, ["frequency", "urgency"]) :
+    if _contains_any(t, ["burning with urination", "painful urination", "dysuria"]) and _contains_any(t, ["frequency", "urgency"]):
         return "Urinary tract infection"
     if _contains_any(t, ["flank pain"]) and _contains_any(t, ["radiating to groin", "groin"]) and _contains_any(t, ["blood in urine", "pink-tinged urine", "hematuria"]):
         return "Kidney stones"
@@ -177,24 +198,34 @@ def classify_by_keywords(symptom_text: str) -> Optional[str]:
 def predict_diseases(text_list: List[str]) -> List[str]:
     predictions: List[str] = []
     for text in text_list:
-        # First, try rules
         rule_label = classify_by_keywords(text)
         if rule_label is not None:
             predictions.append(rule_label)
             continue
-        # Fallback to existing model, but map to known human diseases only
-        try:
-            model_label = model.predict(vectorizer.transform([text]))[0]
-            predictions.append(model_label if model_label in HUMAN_DISEASES else "Unknown")
-        except Exception:
+
+        model_label: Optional[str] = None
+        if model is not None and vectorizer is not None:
+            try:
+                model_label = model.predict(vectorizer.transform([text]))[0]
+            except Exception:
+                model_label = None
+
+        if model_label in HUMAN_DISEASES:
+            predictions.append(model_label)  # type: ignore[arg-type]
+        elif model_label is not None:
             predictions.append("Unknown")
+        else:
+            predictions.append("Unknown")
+
     return predictions
+
 
 # --- Function to extract insights ---
 def generate_insights(df: pd.DataFrame) -> pd.DataFrame:
-    insights = df['Predicted Disease'].value_counts().reset_index()
-    insights.columns = ['Disease', 'Count']
+    insights = df["Predicted Disease"].value_counts().reset_index()
+    insights.columns = ["Disease", "Count"]
     return insights
+
 
 # --- Input Options ---
 input_mode = st.radio("Choose Input Type:", ("Enter Text", "Upload File"))
@@ -205,6 +236,7 @@ if input_mode == "Enter Text":
     st.write("- Chest pain, shortness of breath")
     st.write("- Nausea, vomiting, abdominal pain")
     st.write("- Joint pain, swelling, stiffness")
+
     user_text = st.text_area("Enter human symptoms here:")
     if st.button("Predict"):
         if user_text.strip():
@@ -215,16 +247,19 @@ if input_mode == "Enter Text":
 
             st.subheader("📊 Actionable Insights")
             st.write("Since it's only one entry, no chart is generated.")
-            csv = result_df.to_csv(index=False).encode('utf-8')
+            csv = result_df.to_csv(index=False).encode("utf-8")
             st.download_button("Download CSV", data=csv, file_name="prediction_result.csv", mime="text/csv")
         else:
             st.warning("Please enter some text.")
-
 else:
     uploaded_file = st.file_uploader("Upload a .txt file with human symptom descriptions", type=["txt"])
     if uploaded_file is not None:
-        file_content = uploaded_file.read().decode("utf-8")
-        text_lines = [line.strip() for line in file_content.strip().split('\n') if line.strip()]
+        try:
+            file_content = uploaded_file.read().decode("utf-8")
+        except Exception:
+            file_content = ""
+
+        text_lines = [line.strip() for line in file_content.strip().split("\n") if line.strip()]
 
         if len(text_lines) == 0:
             st.warning("The uploaded file is empty or invalid.")
@@ -240,276 +275,14 @@ else:
 
             # Plot
             fig, ax = plt.subplots()
-            ax.bar(insight_df['Disease'], insight_df['Count'], color='skyblue')
-            plt.xticks(rotation=45)
+            ax.bar(insight_df["Disease"], insight_df["Count"], color="skyblue")
+            plt.xticks(rotation=45, ha="right")
             plt.title("Disease Frequency")
+            plt.tight_layout()
             st.pyplot(fig)
 
             # Download
-            csv = result_df.to_csv(index=False).encode('utf-8')
+            csv = result_df.to_csv(index=False).encode("utf-8")
             st.download_button("Download Result CSV", data=csv, file_name="predicted_diseases.csv", mime="text/csv")
- = joblib.load("model.pkl")
-# vectorizer = joblib.load("vectorizer.pkl")
 
-# st.title("Animal Health Condition Classifier")
-
-# user_input = st.text_area("Enter clinical notes or animal symptoms:")
-
-# if st.button("Predict"):
-#     if user_input.strip() == "":
-#         st.warning("Please enter some text.")
-#     else:
-#         vect_input = vectorizer.transform([user_input])
-#         prediction = model.predict(vect_input)[0]
-#         st.success(f"Predicted Condition: **{prediction}**")
-
-
-# import pandas as pd
-# from datetime import datetime
-
-# # Initialize session state
-# if "record_list" not in st.session_state:
-#     st.session_state["record_list"] = []
-
-# # After prediction:
-# record = {
-#     "DateTime": datetime.now().strftime("%Y-%m-%d %H:%M"),
-#     "Notes": user_input,
-#     "Condition": prediction,
-# }
-# st.session_state["record_list"].append(record)
-
-# # Display structured data
-# df = pd.DataFrame(st.session_state["record_list"])
-# st.write("### Structured Records", df)
-
-# import matplotlib.pyplot as plt
-
-# # Most common conditions
-# if not df.empty:
-#     condition_counts = df['Condition'].value_counts()
-#     st.write("### Condition Frequency")
-#     st.bar_chart(condition_counts)
-
-# csv = df.to_csv(index=False).encode('utf-8')
-# st.download_button("Download Structured Data as CSV", csv, "structured_data.csv", "text/csv")
-
-# if condition_counts.max() > 5:
-#     st.warning(f"⚠️ High frequency of '{condition_counts.idxmax()}' — investigate product usage or quality in affected areas.")
-
-
-# import streamlit as st
-# import pandas as pd
-# import joblib
-# import matplotlib.pyplot as plt
-# from datetime import datetime
-
-# # Load the model and vectorizer
-# model = joblib.load("model.pkl")
-# vectorizer = joblib.load("vectorizer.pkl")
-
-# # Create a list to store structured data
-# if "records" not in st.session_state:
-#     st.session_state.records = []
-
-# st.title("🐾 Veterinary Health Assistant")
-# st.markdown("**AI for Manufacturing - Veesure Animal Health**")
-# st.write("Enter clinical notes or animal symptoms:")
-
-# # User input
-# user_input = st.text_area("Clinical Notes / Animal Symptoms", height=100)
-
-# if st.button("Predict"):
-#     if user_input.strip() == "":
-#         st.warning("Please enter some text.")
-#     else:
-#         # Predict condition
-#         vectorized = vectorizer.transform([user_input])
-#         prediction = model.predict(vectorized)[0]
-
-#         # Store structured record
-#         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-#         st.session_state.records.append({
-#             "Timestamp": timestamp,
-#             "Symptoms": user_input,
-#             "Predicted Condition": prediction
-#         })
-
-#         # Show prediction
-#         st.success(f"🧪 Predicted Condition: **{prediction}**")
-
-# # Show structured table
-# if st.session_state.records:
-#     st.subheader("📋 Structured Data Log")
-#     df = pd.DataFrame(st.session_state.records)
-#     st.dataframe(df)
-
-#     # Show actionable insights: Condition frequency
-#     st.subheader("📊 Most Predicted Conditions")
-#     condition_counts = df["Predicted Condition"].value_counts()
-    
-#     fig, ax = plt.subplots()
-#     condition_counts.plot(kind='bar', ax=ax, color='skyblue')
-#     ax.set_xlabel("Condition")
-#     ax.set_ylabel("Frequency")
-#     ax.set_title("Frequency of Predicted Conditions")
-#     st.pyplot(fig)
-
-
-# import streamlit as st
-# import pickle
-# import pandas as pd
-# import matplotlib.pyplot as plt
-# from sklearn.feature_extraction.text import TfidfVectorizer
-
-# # Load model and vectorizer
-# model = pickle.load(open("model.pkl", "rb"))
-# vectorizer = pickle.load(open("vectorizer.pkl", "rb"))
-
-# st.set_page_config(page_title="Animal Symptom Classifier", layout="centered")
-# st.title("🐾 AI for Animal Symptom Analysis")
-
-# st.markdown("Enter animal symptoms or clinical notes to get predictions, download structured data, and view analytics.")
-
-# # File upload for multiple inputs
-# st.write("### Upload a Text File (.txt) with Multiple Records")
-# uploaded_file = st.file_uploader("Choose a .txt file", type=["txt"])
-
-# input_texts = []
-
-# if uploaded_file is not None:
-#     input_texts = uploaded_file.read().decode("utf-8").splitlines()
-
-# # Manual text input
-# st.write("### Or Enter a Single Symptom / Note")
-# user_input = st.text_input("Enter symptom/clinical note here:")
-
-# if user_input:
-#     input_texts.append(user_input)
-
-# records = []
-
-# if st.button("Predict Conditions"):
-#     if not input_texts:
-#         st.warning("Please upload a file or enter text manually.")
-#     else:
-#         for text in input_texts:
-#             if text.strip():
-#                 X = vectorizer.transform([text])
-#                 prediction = model.predict(X)[0]
-#                 record = {
-#                     "Text": text,
-#                     "Predicted Condition": prediction,
-#                     "Record Type": "User Input" if text == user_input else "File Upload"
-#                 }
-#                 records.append(record)
-
-#         if records:
-#             # Convert to DataFrame
-#             df = pd.DataFrame(records)
-
-#             st.success("✅ Prediction Complete!")
-#             st.write("### Structured Data Table")
-#             st.dataframe(df)
-
-#             # Download button
-#             csv = df.to_csv(index=False)
-#             st.download_button(
-#                 label="📥 Download Structured Data as CSV",
-#                 data=csv,
-#                 file_name="structured_data.csv",
-#                 mime="text/csv"
-#             )
-
-#             # Bar chart for prediction count
-#             st.write("### 📊 Prediction Overview")
-#             chart_data = df["Predicted Condition"].value_counts()
-#             fig, ax = plt.subplots()
-#             chart_data.plot(kind="bar", color="skyblue", ax=ax)
-#             plt.xlabel("Predicted Condition")
-#             plt.ylabel("Count")
-#             plt.title("Distribution of Predicted Conditions")
-#             st.pyplot(fig)
-
-
-import streamlit as st
-import pandas as pd
-import joblib
-import matplotlib.pyplot as plt
-
-# Load the model and vectorizer
-model = joblib.load("model.pkl")
-vectorizer = joblib.load("vectorizer.pkl")
-
-st.title("Disease Detection 🏥")
-st.write("Upload a text file or enter symptoms to predict likely diseases, view structured insights, and download results.")
-
-# Medical Disclaimer
-st.warning("⚠️ **Medical Disclaimer**: This application is for educational and informational purposes only. It should not replace professional medical advice, diagnosis, or treatment. Always consult with qualified healthcare professionals for medical concerns.")
-
-# --- Function to preprocess and predict ---
-def predict_condition(text_list):
-    vectors = vectorizer.transform(text_list)
-    predictions = model.predict(vectors)
-    return predictions
-
-# --- Function to extract insights ---
-def generate_insights(df):
-    insights = df['Predicted Condition'].value_counts().reset_index()
-    insights.columns = ['Condition', 'Count']
-    return insights
-
-# --- Input Options ---
-input_mode = st.radio("Choose Input Type:", ("Enter Text", "Upload File"))
-
-if input_mode == "Enter Text":
-    st.write("**Examples of symptom descriptions:**")
-    st.write("- Headache, fever, and fatigue")
-    st.write("- Chest pain, shortness of breath")
-    st.write("- Nausea, vomiting, abdominal pain")
-    st.write("- Joint pain, swelling, stiffness")
-    user_text = st.text_area("Enter human symptoms here:")
-    if st.button("Predict"):
-        if user_text.strip():
-            pred = predict_condition([user_text])[0]
-            st.success(f"Predicted Disease: **{pred}**")
-            result_df = pd.DataFrame([{"Input Text": user_text, "Predicted Disease": pred}])
-            st.dataframe(result_df)
-
-            st.subheader("📊 Actionable Insights")
-            st.write("Since it's only one entry, no chart is generated.")
-            csv = result_df.to_csv(index=False).encode('utf-8')
-            st.download_button("Download CSV", data=csv, file_name="prediction_result.csv", mime="text/csv")
-        else:
-            st.warning("Please enter some text.")
-
-else:
-    uploaded_file = st.file_uploader("Upload a .txt file with human symptom descriptions", type=["txt"])
-    if uploaded_file is not None:
-        file_content = uploaded_file.read().decode("utf-8")
-        text_lines = [line.strip() for line in file_content.strip().split('\n') if line.strip()]
-
-        if len(text_lines) == 0:
-            st.warning("The uploaded file is empty or invalid.")
-        else:
-            predictions = predict_condition(text_lines)
-            result_df = pd.DataFrame({"Input Text": text_lines, "Predicted Disease": predictions})
-            st.subheader("🗂️ Structured Table")
-            st.dataframe(result_df)
-
-            st.subheader("📊 Actionable Insights")
-            insight_df = result_df['Predicted Disease'].value_counts().reset_index()
-            insight_df.columns = ['Disease', 'Count']
-            st.dataframe(insight_df)
-
-            # Plot
-            fig, ax = plt.subplots()
-            ax.bar(insight_df['Disease'], insight_df['Count'], color='skyblue')
-            plt.xticks(rotation=45)
-            plt.title("Disease Frequency")
-            st.pyplot(fig)
-
-            # Download
-            csv = result_df.to_csv(index=False).encode('utf-8')
-            st.download_button("Download Result CSV", data=csv, file_name="predicted_diseases.csv", mime="text/csv")
 
