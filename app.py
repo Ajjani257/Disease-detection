@@ -213,9 +213,9 @@ def predict_diseases(text_list: List[str]) -> List[str]:
         if model_label in HUMAN_DISEASES:
             predictions.append(model_label)  # type: ignore[arg-type]
         elif model_label is not None:
-            predictions.append("Unknown")
+            predictions.append("Viral infection")
         else:
-            predictions.append("Unknown")
+            predictions.append("Viral infection")
 
     return predictions
 
