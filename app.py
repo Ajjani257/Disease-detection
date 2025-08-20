@@ -80,6 +80,62 @@ HUMAN_DISEASES: List[str] = [
 ]
 
 
+# Lightweight keyword map for best-guess fallback scoring
+DISEASE_KEYWORDS = {
+    "Influenza": ["fever", "chills", "body aches", "fatigue", "dry cough"],
+    "Common Cold": ["runny nose", "stuffy nose", "congestion", "sneezing", "sore throat"],
+    "COVID-19": ["loss of smell", "loss of taste", "fever", "dry cough", "shortness of breath"],
+    "Asthma": ["wheezing", "chest tightness", "night", "exercise"],
+    "Allergic Rhinitis": ["itchy eyes", "sneezing", "pollen", "dust", "outdoors"],
+    "Migraine": ["aura", "photophobia", "phonophobia", "pulsating", "nausea"],
+    "Tension headache": ["band-like", "pressure", "stress", "neck tightness"],
+    "Sinusitis": ["facial pressure", "tooth pain", "thick", "yellow", "green", "bending forward"],
+    "Gastroenteritis": ["vomiting", "diarrhea", "cramps", "stomach cramps", "low fever"],
+    "GERD": ["heartburn", "burning chest", "lying down", "sour taste", "regurgitation"],
+    "Gastritis": ["epigastric", "upper abdominal", "nausea", "nsaid", "early satiety"],
+    "Pancreatitis": ["epigastric", "radiating to back", "severe", "vomiting"],
+    "Urinary tract infection": ["dysuria", "burning", "frequency", "urgency"],
+    "Kidney stones": ["flank pain", "groin", "hematuria", "blood in urine"],
+    "Appendicitis": ["right lower", "migrated", "fever", "rebound"],
+    "Pneumonia": ["productive cough", "rusty sputum", "pleuritic", "fever"],
+    "Anemia": ["fatigue", "pale", "dizziness", "shortness of breath on exertion"],
+    "Hypertension": ["very high blood pressure", "blurred vision", "pounding", "nosebleeds"],
+    "Hypoglycemia": ["shakiness", "sweating", "confusion", "relief after eating"],
+    "Hyperthyroidism": ["weight loss", "heat intolerance", "palpitations", "tremor"],
+    "Hypothyroidism": ["weight gain", "cold intolerance", "dry skin", "constipation"],
+    "Diabetes": ["frequent urination", "excessive thirst", "polydipsia", "polyuria", "blurry vision"],
+    "Sciatica": ["shooting pain", "radiating down the leg", "tingling"],
+    "Low back strain": ["low back pain", "after lifting", "muscle spasm"],
+    "Dermatitis": ["itchy rash", "redness", "scaly", "blister", "contact"],
+    "Eczema": ["itchy", "dry skin", "patches", "flexural"],
+    "Strep throat": ["severe sore throat", "no cough", "swollen tender neck glands"],
+    "Tonsillitis": ["sore throat", "difficulty swallowing", "enlarged tonsils", "white patches"],
+    "Otitis media": ["ear pain", "fever", "tugging at ear", "trouble hearing"],
+    "Conjunctivitis": ["red itchy eyes", "discharge", "crusting", "watery"],
+    "Cellulitis": ["warm", "red", "tender", "spreading", "swelling"],
+    "Rheumatoid Arthritis": ["joint pain", "swelling", "stiffness", "morning", "bilateral"],
+    "Depression": ["sadness", "loss of interest", "anhedonia", "hopeless"],
+    "Liver Cancer": ["abdominal pain", "weight loss", "jaundice", "liver", "mass"],
+    "Anxiety Disorders": ["panic", "sense of doom", "racing heart", "trembling", "sweating"],
+    "Bronchitis": ["productive cough", "mucus", "after a bad cold", "wheeze"],
+}
+
+
+def best_guess_from_keywords(symptom_text: str) -> str:
+    text = symptom_text.lower()
+    best_label = "Common Cold"
+    best_score = -1
+    for disease, keywords in DISEASE_KEYWORDS.items():
+        score = 0
+        for kw in keywords:
+            if kw in text:
+                score += 1
+        if score > best_score:
+            best_score = score
+            best_label = disease
+    return best_label
+
+
 # --- Keyword-based rules aligned to the above diseases ---
 def _contains_any(text: str, keywords: List[str]) -> bool:
     return any(keyword in text for keyword in keywords)
@@ -212,10 +268,8 @@ def predict_diseases(text_list: List[str]) -> List[str]:
 
         if model_label in HUMAN_DISEASES:
             predictions.append(model_label)  # type: ignore[arg-type]
-        elif model_label is not None:
-            predictions.append("Viral infection")
         else:
-            predictions.append("Viral infection")
+            predictions.append(best_guess_from_keywords(text))
 
     return predictions
 
