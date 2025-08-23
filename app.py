@@ -2,41 +2,39 @@ import streamlit as st
 import pandas as pd
 import joblib
 import matplotlib.pyplot as plt
-from typing import List, Optional
+from typing import List, Optional, Tuple
+import os
 
+# --- Cached artifact loading with graceful fallback ---
+@st.cache_resource(show_spinner=False)
+def load_artifacts() -> Tuple[Optional[object], Optional[object]]:
+    model_path = "model.pkl"
+    vec_path = "vectorizer.pkl"
+    loaded_model = None
+    loaded_vectorizer = None
+    try:
+        if os.path.exists(model_path):
+            loaded_model = joblib.load(model_path)
+    except Exception:
+        loaded_model = None
+    try:
+        if os.path.exists(vec_path):
+            loaded_vectorizer = joblib.load(vec_path)
+    except Exception:
+        loaded_vectorizer = None
+    return loaded_model, loaded_vectorizer
 
-# --- Page config ---
-st.set_page_config(page_title="Disease Detection", page_icon="🏥", layout="centered")
-
-
-# --- Try to load model/vectorizer (graceful if missing) ---
-model = None
-vectorizer = None
-model_load_error: Optional[str] = None
-try:
-    model = joblib.load("model.pkl")
-    vectorizer = joblib.load("vectorizer.pkl")
-except Exception as exc:
-    model_load_error = (
-        "Model/vectorizer could not be loaded. Keyword rules will be used as fallback only.\n"
-        f"Details: {exc}"
-    )
-
+model, vectorizer = load_artifacts()
 
 st.title("Disease Detection 🏥")
-st.write(
-    "Upload a text file or enter symptoms to predict likely diseases, view structured insights, and download results."
-)
+st.write("Upload a text file or enter symptoms to predict likely diseases, view structured insights, and download results.")
+st.info("💡 **Multi-Symptom Analysis**: The system now analyzes each comma-separated symptom individually and combines the results for more accurate predictions!")
+
+if model is None or vectorizer is None:
+    st.info("Running in rules-only mode because model files were not found or could not be loaded. Predictions will use keyword rules; upload `model.pkl` and `vectorizer.pkl` to enable ML fallback.")
 
 # Medical Disclaimer
-st.warning(
-    "⚠️ **Medical Disclaimer**: This application is for educational and informational purposes only. "
-    "It should not replace professional medical advice, diagnosis, or treatment. Always consult with qualified healthcare professionals for medical concerns."
-)
-
-if model_load_error:
-    st.info(model_load_error)
-
+st.warning("⚠️ **Medical Disclaimer**: This application is for educational and informational purposes only. It should not replace professional medical advice, diagnosis, or treatment. Always consult with qualified healthcare professionals for medical concerns.")
 
 # --- Human disease labels (reference set) ---
 HUMAN_DISEASES: List[str] = [
@@ -79,63 +77,6 @@ HUMAN_DISEASES: List[str] = [
     "Dermatitis",
 ]
 
-
-# Lightweight keyword map for best-guess fallback scoring
-DISEASE_KEYWORDS = {
-    "Influenza": ["fever", "chills", "body aches", "fatigue", "dry cough"],
-    "Common Cold": ["runny nose", "stuffy nose", "congestion", "sneezing", "sore throat"],
-    "COVID-19": ["loss of smell", "loss of taste", "fever", "dry cough", "shortness of breath"],
-    "Asthma": ["wheezing", "chest tightness", "night", "exercise"],
-    "Allergic Rhinitis": ["itchy eyes", "sneezing", "pollen", "dust", "outdoors"],
-    "Migraine": ["aura", "photophobia", "phonophobia", "pulsating", "nausea"],
-    "Tension headache": ["band-like", "pressure", "stress", "neck tightness"],
-    "Sinusitis": ["facial pressure", "tooth pain", "thick", "yellow", "green", "bending forward"],
-    "Gastroenteritis": ["vomiting", "diarrhea", "cramps", "stomach cramps", "low fever"],
-    "GERD": ["heartburn", "burning chest", "lying down", "sour taste", "regurgitation"],
-    "Gastritis": ["epigastric", "upper abdominal", "nausea", "nsaid", "early satiety"],
-    "Pancreatitis": ["epigastric", "radiating to back", "severe", "vomiting"],
-    "Urinary tract infection": ["dysuria", "burning", "frequency", "urgency"],
-    "Kidney stones": ["flank pain", "groin", "hematuria", "blood in urine"],
-    "Appendicitis": ["right lower", "migrated", "fever", "rebound"],
-    "Pneumonia": ["productive cough", "rusty sputum", "pleuritic", "fever"],
-    "Anemia": ["fatigue", "pale", "dizziness", "shortness of breath on exertion"],
-    "Hypertension": ["very high blood pressure", "blurred vision", "pounding", "nosebleeds"],
-    "Hypoglycemia": ["shakiness", "sweating", "confusion", "relief after eating"],
-    "Hyperthyroidism": ["weight loss", "heat intolerance", "palpitations", "tremor"],
-    "Hypothyroidism": ["weight gain", "cold intolerance", "dry skin", "constipation"],
-    "Diabetes": ["frequent urination", "excessive thirst", "polydipsia", "polyuria", "blurry vision"],
-    "Sciatica": ["shooting pain", "radiating down the leg", "tingling"],
-    "Low back strain": ["low back pain", "after lifting", "muscle spasm"],
-    "Dermatitis": ["itchy rash", "redness", "scaly", "blister", "contact"],
-    "Eczema": ["itchy", "dry skin", "patches", "flexural"],
-    "Strep throat": ["severe sore throat", "no cough", "swollen tender neck glands"],
-    "Tonsillitis": ["sore throat", "difficulty swallowing", "enlarged tonsils", "white patches"],
-    "Otitis media": ["ear pain", "fever", "tugging at ear", "trouble hearing"],
-    "Conjunctivitis": ["red itchy eyes", "discharge", "crusting", "watery"],
-    "Cellulitis": ["warm", "red", "tender", "spreading", "swelling"],
-    "Rheumatoid Arthritis": ["joint pain", "swelling", "stiffness", "morning", "bilateral"],
-    "Depression": ["sadness", "loss of interest", "anhedonia", "hopeless"],
-    "Liver Cancer": ["abdominal pain", "weight loss", "jaundice", "liver", "mass"],
-    "Anxiety Disorders": ["panic", "sense of doom", "racing heart", "trembling", "sweating"],
-    "Bronchitis": ["productive cough", "mucus", "after a bad cold", "wheeze"],
-}
-
-
-def best_guess_from_keywords(symptom_text: str) -> str:
-    text = symptom_text.lower()
-    best_label = "Common Cold"
-    best_score = -1
-    for disease, keywords in DISEASE_KEYWORDS.items():
-        score = 1
-        for kw in keywords:
-            if kw in text:
-                score += 1
-        if score > best_score:
-            best_score = score
-            best_label = disease
-    return best_label
-
-
 # --- Keyword-based rules aligned to the above diseases ---
 def _contains_any(text: str, keywords: List[str]) -> bool:
     return any(keyword in text for keyword in keywords)
@@ -150,7 +91,7 @@ def classify_by_keywords(symptom_text: str) -> Optional[str]:
 
     # Prioritize urgent/emergent patterns
     if _contains_any(t, ["hives", "swelling of lips", "throat tightness", "anaphylaxis"]) and _contains_any(t, ["wheezing", "dizziness", "faint"]):
-        return "Anaphylaxis"  # Not listed above, but acceptable as a rule-based urgent label
+        return "Anaphylaxis"  # not in header list but supported in dataset
 
     # Respiratory infections
     if _contains_all(t, ["fever", "chills"]) and _contains_any(t, ["body aches", "severe fatigue"]) and _contains_any(t, ["dry cough", "cough"]):
@@ -187,7 +128,7 @@ def classify_by_keywords(symptom_text: str) -> Optional[str]:
         return "Pancreatitis"
 
     # GU
-    if _contains_any(t, ["burning with urination", "painful urination", "dysuria"]) and _contains_any(t, ["frequency", "urgency"]):
+    if _contains_any(t, ["burning with urination", "painful urination", "dysuria"]) and _contains_any(t, ["frequency", "urgency"]) :
         return "Urinary tract infection"
     if _contains_any(t, ["flank pain"]) and _contains_any(t, ["radiating to groin", "groin"]) and _contains_any(t, ["blood in urine", "pink-tinged urine", "hematuria"]):
         return "Kidney stones"
@@ -254,90 +195,117 @@ def classify_by_keywords(symptom_text: str) -> Optional[str]:
 def predict_diseases(text_list: List[str]) -> List[str]:
     predictions: List[str] = []
     for text in text_list:
-        rule_label = classify_by_keywords(text)
-        if rule_label is not None:
-            predictions.append(rule_label)
-            continue
-
-        model_label: Optional[str] = None
-        if model is not None and vectorizer is not None:
+        # Split by comma to handle multi-string symptoms
+        symptom_parts = [part.strip() for part in text.split(',') if part.strip()]
+        
+        # Analyze each symptom part separately
+        part_predictions = []
+        for part in symptom_parts:
+            # First, try rules on individual parts
+            rule_label = classify_by_keywords(part)
+            if rule_label is not None:
+                part_predictions.append(rule_label)
+                continue
+            # Fallback to existing model for individual parts
             try:
-                model_label = model.predict(vectorizer.transform([text]))[0]
+                if model is not None and vectorizer is not None:
+                    model_label = model.predict(vectorizer.transform([part]))[0]
+                    part_predictions.append(model_label if model_label in HUMAN_DISEASES else "Unknown")
+                else:
+                    part_predictions.append("Unknown")
             except Exception:
-                model_label = None
-
-        if model_label in HUMAN_DISEASES:
-            predictions.append(model_label)  # type: ignore[arg-type]
+                part_predictions.append("Unknown")
+        
+        # Also try the full text as a whole
+        full_text_rule = classify_by_keywords(text)
+        if full_text_rule is not None:
+            part_predictions.append(full_text_rule)
         else:
-            predictions.append(best_guess_from_keywords(text))
-
+            try:
+                if model is not None and vectorizer is not None:
+                    full_text_model = model.predict(vectorizer.transform([text]))[0]
+                    part_predictions.append(full_text_model if full_text_model in HUMAN_DISEASES else "Unknown")
+                else:
+                    part_predictions.append("Unknown")
+            except Exception:
+                part_predictions.append("Unknown")
+        
+        # Get the most common prediction, or the first non-Unknown prediction
+        valid_predictions = [p for p in part_predictions if p != "Unknown"]
+        if valid_predictions:
+            # Use the most frequent prediction, or the first one if tied
+            from collections import Counter
+            prediction_counts = Counter(valid_predictions)
+            most_common = prediction_counts.most_common(1)[0][0]
+            predictions.append(most_common)
+        else:
+            predictions.append("Unknown")
+    
     return predictions
-
 
 # --- Function to extract insights ---
 def generate_insights(df: pd.DataFrame) -> pd.DataFrame:
-    insights = df["Predicted Disease"].value_counts().reset_index()
-    insights.columns = ["Disease", "Count"]
+    if df.empty or 'Predicted Disease' not in df.columns:
+        return pd.DataFrame(columns=["Disease", "Count"])
+    insights = df['Predicted Disease'].value_counts().reset_index()
+    insights.columns = ['Disease', 'Count']
     return insights
-
 
 # --- Input Options ---
 input_mode = st.radio("Choose Input Type:", ("Enter Text", "Upload File"))
 
 if input_mode == "Enter Text":
-    st.write("**Examples of symptom descriptions:**")
-    st.write("- Headache, fever, and fatigue")
+    st.write("**Examples of symptom descriptions (use commas to separate multiple symptoms):**")
+    st.write("- Headache, fever, fatigue")
     st.write("- Chest pain, shortness of breath")
     st.write("- Nausea, vomiting, abdominal pain")
     st.write("- Joint pain, swelling, stiffness")
-
+    st.write("- Fever, cough, body aches, loss of taste")
     user_text = st.text_area("Enter human symptoms here:")
     if st.button("Predict"):
         if user_text.strip():
             pred = predict_diseases([user_text])[0]
             st.success(f"Predicted Disease: **{pred}**")
             result_df = pd.DataFrame([{"Input Text": user_text, "Predicted Disease": pred}])
+            result_df.index = result_df.index + 1  # Start index from 1
             st.dataframe(result_df)
 
             st.subheader("📊 Actionable Insights")
             st.write("Since it's only one entry, no chart is generated.")
-            csv = result_df.to_csv(index=False).encode("utf-8")
+            csv = result_df.to_csv(index=False).encode('utf-8')
             st.download_button("Download CSV", data=csv, file_name="prediction_result.csv", mime="text/csv")
         else:
             st.warning("Please enter some text.")
+
 else:
     uploaded_file = st.file_uploader("Upload a .txt file with human symptom descriptions", type=["txt"])
     if uploaded_file is not None:
-        try:
-            file_content = uploaded_file.read().decode("utf-8")
-        except Exception:
-            file_content = ""
-
-        text_lines = [line.strip() for line in file_content.strip().split("\n") if line.strip()]
+        file_content = uploaded_file.read().decode("utf-8")
+        text_lines = [line.strip() for line in file_content.strip().split('\n') if line.strip()]
 
         if len(text_lines) == 0:
             st.warning("The uploaded file is empty or invalid.")
         else:
             predictions = predict_diseases(text_lines)
             result_df = pd.DataFrame({"Input Text": text_lines, "Predicted Disease": predictions})
+            result_df.index = result_df.index + 1  # Start index from 1
             st.subheader("🗂️ Structured Table")
             st.dataframe(result_df)
 
             st.subheader("📊 Actionable Insights")
             insight_df = generate_insights(result_df)
-            st.dataframe(insight_df)
-
-            # Plot
-            fig, ax = plt.subplots()
-            ax.bar(insight_df["Disease"], insight_df["Count"], color="skyblue")
-            plt.xticks(rotation=45, ha="right")
-            plt.title("Disease Frequency")
-            plt.tight_layout()
-            st.pyplot(fig)
+            if insight_df.empty:
+                st.write("No insights available.")
+            else:
+                insight_df.index = insight_df.index + 1  # Start index from 1
+                st.dataframe(insight_df)
+                # Plot
+                fig, ax = plt.subplots()
+                ax.bar(insight_df['Disease'], insight_df['Count'], color='skyblue')
+                plt.xticks(rotation=45)
+                plt.title("Disease Frequency")
+                st.pyplot(fig)
 
             # Download
-            csv = result_df.to_csv(index=False).encode("utf-8")
+            csv = result_df.to_csv(index=False).encode('utf-8')
             st.download_button("Download Result CSV", data=csv, file_name="predicted_diseases.csv", mime="text/csv")
-
-
-
