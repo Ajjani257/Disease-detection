@@ -338,7 +338,3 @@ else:
             # Download
             csv = result_df.to_csv(index=False).encode("utf-8")
             st.download_button("Download Result CSV", data=csv, file_name="predicted_diseases.csv", mime="text/csv")
-
-
-
-explain each line of code to me
