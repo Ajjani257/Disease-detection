@@ -28,7 +28,6 @@ model, vectorizer = load_artifacts()
 
 st.title("Disease Detection 🏥")
 st.write("Upload a text file or enter symptoms to predict likely diseases, view structured insights, and download results.")
-st.info("💡 **Multi-Symptom Analysis**: The system now analyzes each comma-separated symptom individually and combines the results for more accurate predictions!")
 
 if model is None or vectorizer is None:
     st.info("Running in rules-only mode because model files were not found or could not be loaded. Predictions will use keyword rules; upload `model.pkl` and `vectorizer.pkl` to enable ML fallback.")
@@ -195,52 +194,20 @@ def classify_by_keywords(symptom_text: str) -> Optional[str]:
 def predict_diseases(text_list: List[str]) -> List[str]:
     predictions: List[str] = []
     for text in text_list:
-        # Split by comma to handle multi-string symptoms
-        symptom_parts = [part.strip() for part in text.split(',') if part.strip()]
-        
-        # Analyze each symptom part separately
-        part_predictions = []
-        for part in symptom_parts:
-            # First, try rules on individual parts
-            rule_label = classify_by_keywords(part)
-            if rule_label is not None:
-                part_predictions.append(rule_label)
-                continue
-            # Fallback to existing model for individual parts
-            try:
-                if model is not None and vectorizer is not None:
-                    model_label = model.predict(vectorizer.transform([part]))[0]
-                    part_predictions.append(model_label if model_label in HUMAN_DISEASES else "Unknown")
-                else:
-                    part_predictions.append("Unknown")
-            except Exception:
-                part_predictions.append("Unknown")
-        
-        # Also try the full text as a whole
-        full_text_rule = classify_by_keywords(text)
-        if full_text_rule is not None:
-            part_predictions.append(full_text_rule)
-        else:
-            try:
-                if model is not None and vectorizer is not None:
-                    full_text_model = model.predict(vectorizer.transform([text]))[0]
-                    part_predictions.append(full_text_model if full_text_model in HUMAN_DISEASES else "Unknown")
-                else:
-                    part_predictions.append("Unknown")
-            except Exception:
-                part_predictions.append("Unknown")
-        
-        # Get the most common prediction, or the first non-Unknown prediction
-        valid_predictions = [p for p in part_predictions if p != "Unknown"]
-        if valid_predictions:
-            # Use the most frequent prediction, or the first one if tied
-            from collections import Counter
-            prediction_counts = Counter(valid_predictions)
-            most_common = prediction_counts.most_common(1)[0][0]
-            predictions.append(most_common)
-        else:
+        # First, try rules
+        rule_label = classify_by_keywords(text)
+        if rule_label is not None:
+            predictions.append(rule_label)
+            continue
+        # Fallback to existing model, but map to known human diseases only
+        try:
+            if model is not None and vectorizer is not None:
+                model_label = model.predict(vectorizer.transform([text]))[0]
+                predictions.append(model_label if model_label in HUMAN_DISEASES else "Unknown")
+            else:
+                predictions.append("Unknown")
+        except Exception:
             predictions.append("Unknown")
-    
     return predictions
 
 # --- Function to extract insights ---
@@ -255,19 +222,17 @@ def generate_insights(df: pd.DataFrame) -> pd.DataFrame:
 input_mode = st.radio("Choose Input Type:", ("Enter Text", "Upload File"))
 
 if input_mode == "Enter Text":
-    st.write("**Examples of symptom descriptions (use commas to separate multiple symptoms):**")
-    st.write("- Headache, fever, fatigue")
+    st.write("**Examples of symptom descriptions:**")
+    st.write("- Headache, fever, and fatigue")
     st.write("- Chest pain, shortness of breath")
     st.write("- Nausea, vomiting, abdominal pain")
     st.write("- Joint pain, swelling, stiffness")
-    st.write("- Fever, cough, body aches, loss of taste")
     user_text = st.text_area("Enter human symptoms here:")
     if st.button("Predict"):
         if user_text.strip():
             pred = predict_diseases([user_text])[0]
             st.success(f"Predicted Disease: **{pred}**")
             result_df = pd.DataFrame([{"Input Text": user_text, "Predicted Disease": pred}])
-            result_df.index = result_df.index + 1  # Start index from 1
             st.dataframe(result_df)
 
             st.subheader("📊 Actionable Insights")
@@ -288,7 +253,6 @@ else:
         else:
             predictions = predict_diseases(text_lines)
             result_df = pd.DataFrame({"Input Text": text_lines, "Predicted Disease": predictions})
-            result_df.index = result_df.index + 1  # Start index from 1
             st.subheader("🗂️ Structured Table")
             st.dataframe(result_df)
 
@@ -297,7 +261,6 @@ else:
             if insight_df.empty:
                 st.write("No insights available.")
             else:
-                insight_df.index = insight_df.index + 1  # Start index from 1
                 st.dataframe(insight_df)
                 # Plot
                 fig, ax = plt.subplots()
