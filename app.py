@@ -126,7 +126,7 @@ def best_guess_from_keywords(symptom_text: str) -> str:
     best_label = "Common Cold"
     best_score = -1
     for disease, keywords in DISEASE_KEYWORDS.items():
-        score = 0
+        score = 1
         for kw in keywords:
             if kw in text:
                 score += 1
@@ -338,5 +338,6 @@ else:
             # Download
             csv = result_df.to_csv(index=False).encode("utf-8")
             st.download_button("Download Result CSV", data=csv, file_name="predicted_diseases.csv", mime="text/csv")
+
 
 
